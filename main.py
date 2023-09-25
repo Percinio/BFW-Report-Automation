@@ -12,22 +12,32 @@ from googleapiclient.errors import HttpError
 
 import csv
 
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.select import Select
+import pyautogui
+import json
+
 bfwLogsPath = "ubuntu@ec2-52-21-241-87.compute-1.amazonaws.com:bfw/logs/"
 environmentWL = "WL"
 environmentOTA = "OTA"
 downloadFilePath = "BFWLogs/"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 tokenJsonFilePath = "Security/token.json"
+tokenBFWJsonFilePath = "Security/tokenBFW.json"
 
 #Software configurations
 MAY_LOGS_FILES = ["MAY-18-2023", "MAY-19-2023", "MAY-20-2023", "MAY-21-2023"]
 JUNE_LOGS_FILES = ["JUNE-22-2023", "JUNE-23-2023", "JUNE-24-2023", "JUNE-25-2023"]
+AUGUST_LOGS_FILES = ["AUGUST-34-2023"]
+SEPTEMBER_LOGS_FILE = ['SEPTEMBER-39-2023']
 
 MAY_OTA_SPREADSHEET_ID = "136nlvD8cn4eqC0P2KTHmTHQjs1HdGj82v4InfMo-Jts"
 MAY_WL_SPREADSHEET_ID = "136nlvD8cn4eqC0P2KTHmTHQjs1HdGj82v4InfMo-Jts"
+AUGUST_OTA_SPREADSHEET_ID = "136nlvD8cn4eqC0P2KTHmTHQjs1HdGj82v4InfMo-Jts"
 
-SPREADSHEET_LOGS = [[MAY_WL_SPREADSHEET_ID, environmentWL, MAY_LOGS_FILES],
-                    [MAY_OTA_SPREADSHEET_ID, environmentOTA, MAY_LOGS_FILES]]
+
+SPREADSHEET_LOGS = [[AUGUST_OTA_SPREADSHEET_ID, environmentOTA, SEPTEMBER_LOGS_FILE]]
 SHEET_CLEAR_NAME = 'Log completo'
 WRITE_SAMPLE_RANGE = 'Log completo!A1'
 READ_SAMPLE_RANGE = 'CONSOLIDAÇÃO!A2:B'
@@ -110,10 +120,74 @@ def readBFWLogs(enviroment, logsDate):
     return logs
 
 #Turn ON VPN!
+def GDSAPIAuthentication():
+    driver = webdriver.Chrome()  # Optional argument, if not specified will search path.
+    driver.get('https://www.grupoj3.com.br/xml/')
+    time.sleep(3)
+    with open(tokenBFWJsonFilePath) as f:
+        credential = json.load(f)
+    pyautogui.typewrite(credential['user'], interval=0.05)
+    pyautogui.press('tab')
+    pyautogui.typewrite(credential['password'], interval=0.05)
+    pyautogui.press('enter')
+    time.sleep(1)  # Let the user actually see something!
+    return driver
+
+
+def returnTickets(driver, logs):
+    for log in logs:
+        if "<error" in log[18]:
+            if "BILHETE NÃO ENCONTRADO NA VIAÇÃO." not in log[18] and "PEDIDO NAO ENCONTRADO" not in log[18]:
+
+                if log[0] == "BYPASS":
+                    operationElement = driver.find_element(By.ID, 'operation')
+                    select = Select(operationElement)
+                    select.select_by_visible_text('Devolução bypass')
+
+                if log[0] == "DEFAULT":
+                    operationElement = driver.find_element(By.ID, 'operation')
+                    select = Select(operationElement)
+                    select.select_by_visible_text('Devolução')
+
+                origin = driver.find_element(By.ID, "origin")
+                destination = driver.find_element(By.ID, "destination")
+                transactionId = driver.find_element(By.NAME, "idtransacao")
+                group = driver.find_element(By.ID, "group")
+                service = driver.find_element(By.ID, "service")
+                seat = driver.find_element(By.ID, "seat")
+                date = driver.find_element(By.ID, "date")
+
+                origin.clear()
+                destination.clear()
+                transactionId.clear()
+                group.clear()
+                service.clear()
+                seat.clear()
+                date.clear()
+
+                origin.send_keys(log[5])
+                destination.send_keys(log[7])
+                transactionId.send_keys(log[1])
+                group.send_keys(log[10])
+                service.send_keys(log[11])
+                seat.send_keys(log[9])
+                time.sleep(1)
+                date.send_keys(log[12][0:10])
+                time.sleep(1)
+                button = driver.find_element(By.ID, "submit")
+                button.click();
+                # recuperado
+                time.sleep(7)
+                response = driver.find_element(By.CLASS_NAME, "response-section")
+                responseText = response.get_attribute('innerHTML')
+                print(responseText)
+                time.sleep(1)  # Let the user actually see something!
+
+
 if __name__ == '__main__':
-    print('Starts Google API authentication')
-    creds = googleAPIAuthentication()
-    print("Authentication completed successfully")
+    #print('Starts Google API authentication')
+    #creds = googleAPIAuthentication()
+    #print("Authentication completed successfully")
     for spreadSheetConfig in SPREADSHEET_LOGS:
         spreadSheetId = spreadSheetConfig[0]
         environment = spreadSheetConfig[1]
@@ -123,13 +197,18 @@ if __name__ == '__main__':
         print("Downloads completed successfully")
         print("Starting to read the BFW logs file")
         logs = readBFWLogs(environment, logsDate)
+        logs.reverse()
         print("BFW Logs file read completed successfully")
-        print("Starting to write the BFW logs on google sheets")
-        writeBFWLogsOnGoogleSheet(creds, spreadSheetId, logs)
-        print("Writing of BFW logs in Google spreadsheets completed successfully")
+        print("Teste")
+        driver = GDSAPIAuthentication()
+        returnTickets(driver, logs)
+        #print("Starting to write the BFW logs on google sheets")
+        #writeBFWLogsOnGoogleSheet(creds, spreadSheetId, logs)
+        #print("Writing of BFW logs in Google spreadsheets completed successfully")
         #print('Starts read Google Sheet')
         #readGoogleSheet(creds, spreadSheetId)
-        time.sleep(20)
+        driver.quit()
+        time.sleep(5)
 
 
 #Documentações base:
